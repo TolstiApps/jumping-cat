@@ -1,0 +1,352 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flying Cat</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Press Start 2P', cursive; background-color: #70c5ce; overflow: hidden; }
+        canvas { display: block; background-color: #70c5ce; }
+        .menu, .game-over, .dev-info, .skin-menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #fff;
+        }
+        .pause-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 14px 24px;
+            font-size: 1rem;
+            background-color: #ffcc00;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            z-index: 100;
+            display: none;
+        }
+        h1 { font-size: 1.5rem; margin-bottom: 20px; }
+        button {
+            padding: 14px 24px;
+            font-size: 0.9rem;
+            background-color: #ffcc00;
+            border: none;
+            cursor: pointer;
+            margin: 10px;
+            border-radius: 10px;
+        }
+        .question-mark {
+            font-size: 2rem;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        img.avatar, img.skin {
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            cursor: pointer;
+            margin: 10px;
+            border: 3px solid transparent;
+        }
+        img.skin.selected {
+            border-color: #ffcc00;
+        }
+        #max-score {
+            font-size: 0.8rem;
+            margin-top: 15px;
+            color: #ffcc00;
+        }
+        /* Модальное окно */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+        }
+        .modal {
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            color: #000;
+            max-width: 300px;
+        }
+        .modal p {
+            margin-bottom: 20px;
+            font-size: 0.8rem;
+        }
+        .modal button {
+            font-family: 'Press Start 2P', cursive;
+            padding: 12px 20px;
+            font-size: 0.8rem;
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="menu" id="menu">
+        <h1>Flying Cat</h1>
+        <button id="start-btn">Start Game</button>
+        <button id="skin-btn">Change Skin</button>
+        <button id="dev-btn">About Developer</button>
+        <button id="reset-score-btn">Reset Max Score</button>
+        <div id="max-score">Max Score: 0</div>
+        <div class="question-mark" onclick="showDeveloperInfo()">?</div>
+    </div>
+
+    <div class="skin-menu" id="skin-menu" style="display:none;">
+        <h2>Select Cat Skin</h2>
+        <div id="skin-list"></div>
+        <button onclick="showMenu()">Back</button>
+    </div>
+
+    <div class="dev-info" id="developer-info" style="display:none;">
+        <img src="https://i.imgur.com/N0CwDvm.png" alt="Avatar" class="avatar">
+        <h2>Tolsti Apps</h2>
+        <p>Making Easy Games and Apps</p>
+        <button onclick="showMenu()">Back</button>
+    </div>
+
+    <div class="game-over" id="game-over" style="display:none;">
+        <h1>Game Over</h1>
+        <p id="final-score"></p>
+        <button onclick="startGame()">Restart</button>
+        <button onclick="showMenu()">Main Menu</button>
+    </div>
+
+    <!-- Модалка подтверждения -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <p>Reset Max Score to 0?</p>
+            <button id="confirm-reset">Yes</button>
+            <button id="cancel-reset">Cancel</button>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+    <button class="pause-btn" id="pause-btn">Pause</button>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        const birdSkins = [
+            "https://i.imgur.com/qfBI2YD.png",
+            "https://i.imgur.com/5d5BnF2.png",
+            "https://i.imgur.com/ExHjqei.png",
+            "https://i.imgur.com/TSYORyK.png"
+        ];
+        let selectedSkinIndex = parseInt(localStorage.getItem("flappySkinIndex")) || 0;
+
+        let birdImg = new Image();
+        let backgroundImg = new Image();
+        let pipeTopImg = new Image();
+        let pipeBottomImg = new Image();
+
+        let birdY;
+        let birdVelocity = 0;
+        const gravity = 0.25;
+        const lift = -7;
+        let pipes = [];
+        const pipeGap = 200;
+        const pipeWidth = 100;
+        const pipeSpeed = 2;
+        let score = 0;
+        let maxScore = localStorage.getItem("flappyMaxScore") || 0;
+        let isGameRunning = false;
+        let isPaused = false;
+
+        const birdSize = 70;
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            birdY = canvas.height / 2;
+        }
+        window.addEventListener("resize", resizeCanvas);
+        resizeCanvas();
+
+        function loadBirdSkin() {
+            birdImg.src = birdSkins[selectedSkinIndex];
+        }
+        loadBirdSkin();
+
+        backgroundImg.src = "https://i.imgur.com/MrXpLcX.png";
+        pipeTopImg.src = "https://i.imgur.com/JcybJy5.png";
+        pipeBottomImg.src = "https://i.imgur.com/vQ3B10v.png";
+
+        document.getElementById("max-score").innerText = "Max Score: " + maxScore;
+
+        function startGame() {
+            document.getElementById("menu").style.display = "none";
+            document.getElementById("developer-info").style.display = "none";
+            document.getElementById("game-over").style.display = "none";
+            document.getElementById("skin-menu").style.display = "none";
+            document.getElementById("pause-btn").style.display = "block";
+            isGameRunning = true;
+            isPaused = false;
+            pipes = [];
+            birdY = canvas.height / 2;
+            birdVelocity = 0;
+            score = 0;
+            requestAnimationFrame(gameLoop);
+        }
+
+        function togglePause() {
+            if (!isGameRunning) return;
+            isPaused = !isPaused;
+            document.getElementById("pause-btn").innerText = isPaused ? "Resume" : "Pause";
+            if (!isPaused) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        function showDeveloperInfo() {
+            document.getElementById("menu").style.display = "none";
+            document.getElementById("developer-info").style.display = "block";
+            document.getElementById("game-over").style.display = "none";
+            document.getElementById("skin-menu").style.display = "none";
+        }
+
+        function showSkinMenu() {
+            document.getElementById("menu").style.display = "none";
+            document.getElementById("developer-info").style.display = "none";
+            document.getElementById("game-over").style.display = "none";
+            document.getElementById("skin-menu").style.display = "block";
+
+            const skinList = document.getElementById("skin-list");
+            skinList.innerHTML = "";
+            birdSkins.forEach((skin, index) => {
+                const img = document.createElement("img");
+                img.src = skin;
+                img.className = "skin" + (index === selectedSkinIndex ? " selected" : "");
+                img.onclick = () => {
+                    selectedSkinIndex = index;
+                    localStorage.setItem("flappySkinIndex", selectedSkinIndex);
+                    loadBirdSkin();
+                    showSkinMenu();
+                };
+                skinList.appendChild(img);
+            });
+        }
+
+        function showMenu() {
+            document.getElementById("developer-info").style.display = "none";
+            document.getElementById("menu").style.display = "block";
+            document.getElementById("game-over").style.display = "none";
+            document.getElementById("skin-menu").style.display = "none";
+            document.getElementById("pause-btn").style.display = "none";
+            document.getElementById("pause-btn").innerText = "Pause";
+            document.getElementById("max-score").innerText = "Max Score: " + maxScore;
+        }
+
+        function endGame() {
+            isGameRunning = false;
+            document.getElementById("pause-btn").style.display = "none";
+            if (score > maxScore) {
+                maxScore = score;
+                localStorage.setItem("flappyMaxScore", maxScore);
+            }
+            document.getElementById("final-score").innerText = "Your score: " + score;
+            document.getElementById("game-over").style.display = "block";
+        }
+
+        // Открыть модалку
+        function openResetModal() {
+            document.getElementById("modal-overlay").style.display = "flex";
+        }
+
+        // Закрыть модалку
+        function closeResetModal() {
+            document.getElementById("modal-overlay").style.display = "none";
+        }
+
+        // Подтверждение сброса
+        function confirmReset() {
+            maxScore = 0;
+            localStorage.setItem("flappyMaxScore", 0);
+            document.getElementById("max-score").innerText = "Max Score: " + maxScore;
+            closeResetModal();
+        }
+
+        function gameLoop() {
+            if (!isGameRunning || isPaused) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.drawImage(backgroundImg, 0, 0, canvas.width, canvas.height);
+
+            birdVelocity += gravity;
+            birdY += birdVelocity;
+
+            if (birdY >= canvas.height - birdSize) {
+                endGame();
+                return;
+            }
+
+            if (birdY < 0) birdY = 0;
+
+            ctx.drawImage(birdImg, canvas.width * 0.2, birdY, birdSize, birdSize);
+
+            if (pipes.length === 0 || pipes[pipes.length - 1].x <= canvas.width - 300) {
+                let pipeHeight = Math.random() * (canvas.height - pipeGap - 100) + 50;
+                pipes.push({ x: canvas.width, y: pipeHeight });
+            }
+
+            pipes.forEach((pipe, index) => {
+                pipe.x -= pipeSpeed;
+                if (pipe.x + pipeWidth < 0) {
+                    pipes.splice(index, 1);
+                    score++;
+                }
+
+                ctx.drawImage(pipeTopImg, pipe.x, 0, pipeWidth, pipe.y);
+                ctx.drawImage(pipeBottomImg, pipe.x, pipe.y + pipeGap, pipeWidth, canvas.height - pipe.y - pipeGap);
+
+                let birdX = canvas.width * 0.2;
+                if (birdX + birdSize > pipe.x && birdX < pipe.x + pipeWidth &&
+                    (birdY < pipe.y || birdY + birdSize > pipe.y + pipeGap)) {
+                    endGame();
+                }
+            });
+
+            ctx.fillStyle = "#fff";
+            ctx.font = "20px 'Press Start 2P'";
+            ctx.fillText("Score: " + score, 20, 40);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function jump() {
+            if (isGameRunning && !isPaused) {
+                birdVelocity = lift;
+            }
+        }
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === " " || event.key === "ArrowUp") {
+                jump();
+            }
+        });
+        document.addEventListener("mousedown", jump);
+        document.addEventListener("touchstart", jump);
+
+        document.getElementById("start-btn").addEventListener("click", startGame);
+        document.getElementById("dev-btn").addEventListener("click", showDeveloperInfo);
+        document.getElementById("skin-btn").addEventListener("click", showSkinMenu);
+        document.getElementById("pause-btn").addEventListener("click", togglePause);
+        document.getElementById("reset-score-btn").addEventListener("click", openResetModal);
+
+        document.getElementById("confirm-reset").addEventListener("click", confirmReset);
+        document.getElementById("cancel-reset").addEventListener("click", closeResetModal);
+    </script>
+</body>
+</html>
